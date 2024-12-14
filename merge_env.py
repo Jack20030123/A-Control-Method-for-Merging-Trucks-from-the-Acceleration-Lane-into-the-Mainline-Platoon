@@ -19,7 +19,7 @@ from typing import Optional, TypeVar
 
 from matplotlib import pyplot as plt
 
-from vehicles import CACCVehicle, MergeVehicle, OthersIDMVehicle
+from vehicles import IDMVehicle, MergeVehicle, OthersIDMVehicle
 
 Observation = TypeVar("Observation")
 
@@ -82,7 +82,6 @@ class MergeEnv(AbstractEnv):
         收敛：80 米 匝道合并的斜路
         合并：80 米 匝道合并后缓冲区
         之后：150 米 匝道消失
-        
         '''
         start_x = 1000  # 汇合路段开始
         end_x = 5000  # 汇合路段结束
@@ -172,39 +171,39 @@ class MergeEnv(AbstractEnv):
         road = self.road
 
         self.controlled_vehicles = []
-        cacc_init_spacing = self.config["cacc_init_spacing"]  # 车辆初始间距
-        cacc_num = self.config["cacc_num"]  # 编队车辆数
+        idm_init_spacing = self.config["idm_init_spacing"]  # 车辆初始间距
+        idm_num = self.config["idm_num"]  # 编队车辆数
 
-        CACCVehicle.DISTANCE_WANTED = cacc_init_spacing
-        MergeVehicle.DISTANCE_WANTED = cacc_init_spacing
-        longitudinals = list(range(0, cacc_num * cacc_init_spacing, cacc_init_spacing))
+        IDMVehicle.DISTANCE_WANTED = idm_init_spacing
+        MergeVehicle.DISTANCE_WANTED = idm_init_spacing
+        longitudinals = list(range(0, idm_num * idm_init_spacing, idm_init_spacing))
 
-        self.cacc_vehicles = []
+        self.idm_vehicles = []
         # 添加车道正常行驶三个车辆
-        for idx in range(cacc_num):
-            vehicle = CACCVehicle(road, road.network.get_lane(("a", "b", 2))
+        for idx in range(idm_num):
+            vehicle = IDMVehicle(road, road.network.get_lane(("a", "b", 2))
                                   .position(longitudinals[idx], 0)
                                   , idx=idx, speed=90, target_speed=90)
-            self.cacc_vehicles.append(vehicle)
+            self.idm_vehicles.append(vehicle)
             road.vehicles.append(vehicle)
 
         # 设置第一辆车辆的目标速度为110  会限制后面的车辆的速度并调整距离
-        self.cacc_vehicles[-1].target_speed = 80
+        self.idm_vehicles[-1].target_speed = 80
 
-        if len(self.cacc_vehicles) == self.config["insert_index"]:
-            init_pos = - cacc_init_spacing - 10
+        if len(self.idm_vehicles) == self.config["insert_index"]:
+            init_pos = - idm_init_spacing - 10
         else:
             # 添加车道合并行驶的车辆 初始位置为插入位置 后面一个5+车辆长度位置
-            init_pos = longitudinals[len(self.cacc_vehicles) - self.config["insert_index"] - 1] - 10
+            init_pos = longitudinals[len(self.idm_vehicles) - self.config["insert_index"] - 1] - 10
         merging_controlled_vehicle = MergeVehicle(road,
                                                   road.network.get_lane(("j", "k", 0)).position(init_pos, 0),
-                                                  cacc_vehicles=self.cacc_vehicles,  # 插入位置前面的车辆
+                                                  idm_vehicles=self.idm_vehicles,  # 插入位置前面的车辆
                                                   insert_idx=self.config["insert_index"],
                                                   speed=95, target_speed=130)
 
         road.vehicles.append(merging_controlled_vehicle)
 
-        self.controlled_vehicles.extend(self.cacc_vehicles)
+        self.controlled_vehicles.extend(self.idm_vehicles)
         self.controlled_vehicles.append(merging_controlled_vehicle)
 
         other_vehicles_type = OthersIDMVehicle
@@ -399,8 +398,8 @@ if __name__ == '__main__':
             },
         },
         "insert_index": 1,  # 插入位置 从0开始
-        "cacc_num": 3,  # 编队货车数量
-        "cacc_init_spacing": 50,  # 货车编队初始间距 [m]
+        "idm_num": 3,  # 编队货车数量(原为cacc_num)
+        "idm_init_spacing": 50,  # 编队初始间距 [m](原为cacc_init_spacing)
         "vehicles_count": 50,  # 非控制车辆数目
         "duration": 60,  # 仿真时长 [s]  不是真实时长
         "reward_speed_range": [20, 40],  # 该速度范围才有速度奖励 超过最大值奖励达到最大
@@ -426,11 +425,6 @@ if __name__ == '__main__':
     print(control_vehicles)
     eposides = 10
     rewards = [0 for _ in range(control_vehicles)]
-    # 0: 'LANE_LEFT',
-    # 1: 'IDLE',
-    # 2: 'LANE_RIGHT',
-    # 3: 'FASTER',
-    # 4: 'SLOWER'
     print(env.action_space)
     save_dir = get_log_path()
 
@@ -439,11 +433,9 @@ if __name__ == '__main__':
         steps = []
         step = 0
         env.config["insert_index"] = eq % len(env.controlled_vehicles)
-        acceleration_list = [None] * (env.config["cacc_num"] + 1)
-        # env.config["insert_index"] = len(env.controlled_vehicles)-1
+        acceleration_list = [None] * (env.config["idm_num"] + 1)
         obs = env.reset()
 
-        # print(obs)
         env.render()
         done = False
         truncated = False
@@ -477,14 +469,14 @@ if __name__ == '__main__':
         # 绘制
         plt.figure(figsize=(12, 8))
         for i, v in enumerate(env.controlled_vehicles[:-1]):
-            plt.subplot(math.ceil((env.config["cacc_num"] + 1) / cols), cols, i + 1)
+            plt.subplot(math.ceil((env.config["idm_num"] + 1) / cols), cols, i + 1)
             table["truck" + str(i + 1)] = acceleration_list[i]
             plt.plot(steps, acceleration_list[i], label=f"Truck {i + 1}")
             plt.xlabel("Step")
             plt.ylabel("Acceleration")
             plt.legend()
 
-        plt.subplot(math.ceil((env.config["cacc_num"] + 1) / cols), cols, len(env.controlled_vehicles))
+        plt.subplot(math.ceil((env.config["idm_num"] + 1) / cols), cols, len(env.controlled_vehicles))
         plt.plot(steps, acceleration_list[-1], label="Merge Truck")
         table["merge_truck"] = acceleration_list[-1]
         plt.xlabel("Step")
@@ -492,10 +484,10 @@ if __name__ == '__main__':
         plt.legend()
         plt.tight_layout()
         plt.savefig(os.path.join(save_dir,
-                                 f"acceleration_curve_{env.config['insert_index']}_{env.config['cacc_num']}.png"))
+                                 f"acceleration_curve_{env.config['insert_index']}_{env.config['idm_num']}.png"))
         plt.close()
 
         # 保存数据为xlsx
         df = pd.DataFrame(table)
         df.to_excel(
-            os.path.join(save_dir, f"acceleration_curve_{env.config['insert_index']}_{env.config['cacc_num']}.xlsx"))
+            os.path.join(save_dir, f"acceleration_curve_{env.config['insert_index']}_{env.config['idm_num']}.xlsx"))
